@@ -1,221 +1,194 @@
 #include <stdio.h>
-#define TOTAL_MEMORY_SIZE 256
-#define MEM_ADDRESS_ERR_HANDLER_ADDRESS 0
-#define INIT_PC 1
+#include <stdlib.h>
+#define LIMIT_MEMORY_SIZE 256
+#define ADDRESS_ERR_HANDLER_ADDRESS 0 // адрес адреса обработчка ошибок
+#define PC_INIT_STEP 1
+#define PC_STEP 2
 #define INIT_ACC 0
-
-// После кода команды (1, 2 или 3) в массиве сразу идёт адрес ячейки-операнда.
-#define PC_SHIFT 1
-int shift_pc(int *cpu_state, int *memory); 
-int init_shift_pc(int *cpu_state, int *memory);
-int load(int *cpu_state, int *memory);
-int add(int *cpu_state, int *memory);
-int sub(int *cpu_state, int *memory);
-int mainloop_error_handler(int *cpu_state, int *memory);
-int check_operand_link_on_memory_range(int *cpu_state, int *memory);
-int check_link_err_handler(int *memory);
+#define PC_LOCAL_SHIFT 1 // После кода команды (1, 2 или 3) в массиве сразу идёт адрес ячейки-операнда.
+#define EXIT_SUCCESS_MSG "Программа завершена без ошибки"
+#define EXIT_FAILURE_MSG "Программа завершена с ошибкой"
 
 enum Opcode {
-    HALT,
-    LOAD,
-    ADD,
-    SUB    
+    OP_HALT,
+    OP_LOAD,
+    OP_ADD,
+    OP_SUB    
 };
 enum Cpu_state {
-    PC,
-    ACC,
-    IR,
-    LINK_TO_ERR_HANDLER,
-    INTERRUPTION,
-    ERR_CODE
+    CS_PC,
+    CS_ACC,
+    CS_IR,
+    CS_LINK_TO_ERR_HANDLER,
+    CS_INTERRUPTION,
+    CS_ERR_CODE
 };
-enum Interraption_state {
-    IN_PROCESS,
-    INTERRAPTED
+enum Interruption_state {
+    INTRS_IN_PROCESS,
+    INTRS_INTERRAPTED
 };
-enum Err_code {
-    NO_ERR,
-    SIG_FAULT
-};
-enum Err_handler_code {
-    NO_HANDLED,
-    HANDLED
-};
-int VIRT_MEM_SIZE; // load_memory присваивает постоянное значение
+typedef enum Err_code {
+    E_NO,
+    E_OP_SEG_FAULT,
+    E_PC_SEG_FAULT,
+    E_NO_COMMAND,
+    E_COMMAND_END_RANGE,
+} err_t;
+
 int load_memory(int *memory);
-int init_cpu_state(int *cpu_state, int *memory);
+err_t init_cpu_state(int *cpu_state, int *memory, int memory_limit);
+err_t shift_pc(int *pc, int *memory, int memory_limit);
+void print_err(int *cpu_state, int *memory);
+int is_command(int content);
+err_t check_address_on_sig_fault(int address, int memory_limit);
+err_t check_pc_valid(int *pc, int *memory, int memory_limit);
+int alu_calc(int command, int acc, int operand);
+
 
 int main(void)
 {
-    // инициализация
-    int memory[TOTAL_MEMORY_SIZE];
+    // Initialization
+    int memory[LIMIT_MEMORY_SIZE];
     int cpu_state[8];
-    VIRT_MEM_SIZE = load_memory(memory); // подразумевается гарантия корректного ввода, в обратном случае необходима валидация
-    if (!init_cpu_state(cpu_state, memory)) {
-        return 1;
+    int memory_limit = load_memory(memory);
+    cpu_state[CS_ERR_CODE] = init_cpu_state(cpu_state, memory, memory_limit);
+    if (cpu_state[CS_ERR_CODE] != E_NO) {
+        fprintf(stderr, "Ошибка инициализации. Error code: %d\n", cpu_state[CS_ERR_CODE]);
+        goto exit_failure;
     }
 
     // mainloop
-    while (1) {
-        printf("pc=%d", cpu_state[PC]);
-        cpu_state[IR] = memory[cpu_state[PC]];
-        printf(": команда %d", cpu_state[IR]);
-        switch (cpu_state[IR])
-        {
-            case HALT: // стоп
-                goto endmainloop;
-            case LOAD: // загрузить в аккумулятор значение из ячейки памяти по адресу (прямая адресация)
-                cpu_state[ERR_CODE] = load(cpu_state, memory);    
-                break;
-            case ADD: // прибавить к аккумулятору значение из ячейки памяти
-                cpu_state[ERR_CODE] = add(cpu_state, memory);
-                break;
-            case SUB: // вычесть из аккумулятора значение из ячейки памяти
-                cpu_state[ERR_CODE] = sub(cpu_state, memory); 
-                break;
-        }
-        printf(", операнд=%d", memory[cpu_state[PC] + PC_SHIFT]);
-        if (!mainloop_error_handler(cpu_state, memory)) {
-            printf("Программа завершена с ошибкой.\n");
-            return 1;
-        }
+    while (cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS) {
+        cpu_state[CS_IR] = memory[cpu_state[CS_PC]];
+        if (cpu_state[CS_IR] == OP_HALT) break;
+        cpu_state[CS_ACC] = alu_calc(cpu_state[CS_IR], cpu_state[CS_ACC], memory[memory[cpu_state[CS_PC] + PC_LOCAL_SHIFT]]);
+        printf("pc=%d: command %d, operand address=%d, acc=%d\n", cpu_state[CS_PC], cpu_state[CS_IR], memory[cpu_state[CS_PC] + PC_LOCAL_SHIFT], cpu_state[CS_ACC]);
+        cpu_state[CS_PC] += 2;
+        cpu_state[CS_ERR_CODE] = shift_pc(&cpu_state[CS_PC], memory, memory_limit);
+        if (cpu_state[CS_ERR_CODE] != E_NO) {
+            print_err(cpu_state, memory);
+            cpu_state[CS_INTERRUPTION] = INTRS_INTERRAPTED;
+        }    
     }
-    endmainloop:
-    printf(", acc=%d\n", cpu_state[ACC]);
-    printf("Программа завершена без ошибки\n");
-    return 0;
+
+    // Termination
+    if (cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS) {
+        puts(EXIT_SUCCESS_MSG);
+        return EXIT_SUCCESS;
+    }
+
+    cpu_state[CS_PC] = cpu_state[CS_LINK_TO_ERR_HANDLER];
+    cpu_state[CS_ERR_CODE] = check_pc_valid(&cpu_state[CS_PC], memory, memory_limit);
+    if (cpu_state[CS_ERR_CODE] != E_NO) {
+            print_err(cpu_state, memory);
+    } else {
+        cpu_state[CS_IR] = memory[cpu_state[CS_PC]];
+        if (cpu_state[CS_IR] == OP_HALT) goto exit_failure;
+        cpu_state[CS_ACC] = alu_calc(cpu_state[CS_IR], cpu_state[CS_ACC], memory[memory[cpu_state[CS_PC] + PC_LOCAL_SHIFT]]);
+        printf("Действие обработчика ошибок: pc=%d: command %d, operand address=%d, acc=%d\n", cpu_state[CS_PC], cpu_state[CS_IR], memory[cpu_state[CS_PC] + PC_LOCAL_SHIFT], cpu_state[CS_ACC]);
+    }
+
+    exit_failure:
+    puts(EXIT_FAILURE_MSG);
+    return EXIT_FAILURE;
 }
 
-int init_cpu_state(int *cpu_state, int *memory)
+void print_err(int *cpu_state, int *memory) {
+    switch (cpu_state[CS_ERR_CODE]){
+        case E_PC_SEG_FAULT:
+            fprintf(stderr, "pc=%d: Ошибка: %s%s\n", cpu_state[CS_PC], "Pointer command segmentation fault 😿", cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : " (повторное прерывание)" );
+            break;
+        case E_NO_COMMAND:
+            fprintf(stderr, "pc=%d: Ошибка: %s%s\n", cpu_state[CS_PC], "счётчик команд не обнаружил следующую команду", cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : " (повторное прерывание)" );
+            break;
+        case E_COMMAND_END_RANGE:
+            fprintf(stderr, "pc=%d: command %d, Ошибка: %s%s\n", cpu_state[CS_PC], memory[cpu_state[CS_PC]], "обнаружена команда в конце памяти", cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : " (повторное прерывание)" );
+            break;
+        case E_OP_SEG_FAULT:
+            fprintf(stderr, "pc=%d: command %d, operand address=%d, Ошибка: %s%s\n", cpu_state[CS_PC], memory[cpu_state[CS_PC]], memory[cpu_state[CS_PC] + PC_LOCAL_SHIFT], "Operand segmentation fault 😿", cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : " (повторное прерывание)" );
+            break;
+    }
+}
+
+err_t init_cpu_state(int *cpu_state, int *memory, int memory_limit)
 {
-    cpu_state[PC] = INIT_PC; // счётчик команд (pc); инициализирующее значение 1 обусловлено резервацией ядреса 0
-    if (!init_shift_pc(cpu_state, memory)) {
-        printf("Ошибка инициализации: не найдено валидных команд");
-        return 0;
-    }
-    cpu_state[ACC] = INIT_ACC; // аккумулятор (acc), хранит текущий результат
-    cpu_state[IR] = HALT; // регистр команд (ir), хранит текущий опкод
-    if (!check_link_err_handler(memory)) {
-        printf("Ошибка инициализации: невалидный адрес обработчка ошибок");
-        return 0;
-    }
-    cpu_state[LINK_TO_ERR_HANDLER] = memory[MEM_ADDRESS_ERR_HANDLER_ADDRESS]; // вектор прерываний (адрес обработчика ошибок)
-    cpu_state[INTERRUPTION] = IN_PROCESS; // флаг остановки (0 = работает, 1 = остановлен)
-    cpu_state[ERR_CODE] = NO_ERR; // код последней ошибки (0 = нет ошибки)
+    err_t rc;
+    cpu_state[CS_PC] = PC_INIT_STEP; // счётчик команд (pc)
+    rc = shift_pc(&cpu_state[CS_PC], memory, memory_limit);
+    if (rc != E_NO) return rc;
+    cpu_state[CS_ACC] = INIT_ACC; // аккумулятор (acc), хранит текущий результат
+    cpu_state[CS_IR] = OP_HALT; // регистр команд (ir), хранит текущий опкод
+    cpu_state[CS_LINK_TO_ERR_HANDLER] = memory[ADDRESS_ERR_HANDLER_ADDRESS]; // вектор прерываний (адрес обработчика ошибок)
+    cpu_state[CS_INTERRUPTION] = INTRS_IN_PROCESS; // флаг остановки (0 = работает, 1 = остановлен)
     cpu_state[6] = 0; // резерв для будущих расширений
     cpu_state[7] = 0; // резерв для будущих расширений
-    return 1;
+    return E_NO;
+}
+
+int alu_calc(int command, int acc, int operand) {
+    switch (command)
+    {
+        case OP_LOAD: // загрузить в аккумулятор значение из ячейки памяти по адресу (прямая адресация)
+            acc = operand;  
+            break;
+        case OP_ADD: // прибавить к аккумулятору значение из ячейки памяти
+            acc += operand;  
+            break;
+        case OP_SUB: // вычесть из аккумулятора значение из ячейки памяти
+            acc -= operand;  
+            break;
+    }
+    return acc;
 }
 
 int load_memory(int *memory)
 {   
     int data;
     int cell_address = 0;
-    while (scanf("%d", &data) != -1) {
+    while ((scanf("%d", &data) != EOF) && (cell_address < LIMIT_MEMORY_SIZE)) {
         memory[cell_address] = data;
         ++cell_address;
     }
-    return cell_address + 1;
+    return cell_address;
 }
 
-int init_shift_pc(int *cpu_state, int *memory) 
-{
-    // попытка обнаружения первой команды с операндом
-    // игнорируются ведущие команды остановки
-    for (int pc = cpu_state[PC]; pc < VIRT_MEM_SIZE - 1; ++pc) // учитывается архитектура обработки команд (следующая ячейка - адресс операнда)
-        switch (memory[pc]) 
-        {
-             case LOAD:
-             case ADD:
-             case SUB:
-                cpu_state[PC] = pc;
-                return 1;
-        }
-    return 0;
+err_t shift_pc(int *pc, int *memory, int memory_limit) // попытка переключения на следующую команду; pc: ожидается обновлённый pc, указывающий не на выполненную команду
+{   err_t rc;
+    for (; *pc < memory_limit; ++*pc) {
+        rc = check_pc_valid(pc, memory, memory_limit);
+        if (rc == E_NO) return E_NO;
+        if (rc == E_NO_COMMAND) continue;
+        if (rc != E_NO) return rc;
+    }
+    return E_NO_COMMAND;
 }
 
-int shift_pc(int *cpu_state, int *memory) // попытка переключения на следующую команду
-{
-    for (int pc = cpu_state[PC] + 1; pc < VIRT_MEM_SIZE; ++pc)
-        switch (memory[pc]) 
-        {
-            case HALT:
-            case LOAD:
-            case ADD: 
-            case SUB:
-                cpu_state[PC] = pc;
-                if (pc == VIRT_MEM_SIZE - 1 && memory[pc] != HALT) return 0; // проверка последней команды в концевой ячейке памяти на предмет потребности в дополнительных ячейках памяти) return SIG_FAULT;
-            return 1;
-        }
-    return 0;
+err_t check_pc_valid(int *pc, int *memory, int memory_limit) {
+    err_t rc;
+    rc = check_address_on_sig_fault(*pc, memory_limit);
+    if (rc != E_NO) return E_PC_SEG_FAULT;
+    if (memory[*pc] == OP_HALT) return E_NO;
+    if (is_command(memory[*pc])) {
+        if (*pc == memory_limit - 1) return E_COMMAND_END_RANGE;
+        rc = check_address_on_sig_fault(memory[*pc + PC_LOCAL_SHIFT], memory_limit);
+        if (rc != E_NO) return rc;
+        return E_NO;
+    }
+    return E_NO_COMMAND;
 }
 
-int check_link_err_handler(int *memory)
-{
-    if (memory[MEM_ADDRESS_ERR_HANDLER_ADDRESS] < 0 || memory[MEM_ADDRESS_ERR_HANDLER_ADDRESS] >= VIRT_MEM_SIZE)
-        return 0;
-    switch (memory[memory[MEM_ADDRESS_ERR_HANDLER_ADDRESS]]) 
+err_t check_address_on_sig_fault(int address, int memory_limit) {
+    return (address < 0 || address >= memory_limit) ? E_OP_SEG_FAULT : E_NO;
+}
+
+
+int is_command(int content) {
+    switch (content) 
     {
-        case HALT:
-        case LOAD:
-        case ADD: 
-        case SUB:
-            if (memory[MEM_ADDRESS_ERR_HANDLER_ADDRESS] == VIRT_MEM_SIZE - 1 && memory[memory[MEM_ADDRESS_ERR_HANDLER_ADDRESS]] != HALT) return 0;
+        case OP_LOAD:
+        case OP_ADD: 
+        case OP_SUB:
             return 1;
     }
     return 0;
-}
-
-int load(int *cpu_state, int *memory)
-{   
-    if (!check_operand_link_on_memory_range(cpu_state, memory))
-        return SIG_FAULT;
-    cpu_state[ACC] = memory[memory[cpu_state[PC] + PC_SHIFT]];
-    return NO_ERR;
-}
-
-int add(int *cpu_state, int *memory)
-{   
-    if (!check_operand_link_on_memory_range(cpu_state, memory))
-        return SIG_FAULT;
-    cpu_state[ACC] += memory[memory[cpu_state[PC] + PC_SHIFT]];
-    return NO_ERR;
-}
-
-int sub(int *cpu_state, int *memory)
-{   
-    if (!check_operand_link_on_memory_range(cpu_state, memory))
-        return SIG_FAULT;
-    cpu_state[ACC] -= memory[memory[cpu_state[PC] + PC_SHIFT]];
-    return NO_ERR;
-}
-
-int check_operand_link_on_memory_range(int *cpu_state, int *memory) 
-{
-    int link = memory[cpu_state[PC] + PC_SHIFT];
-    return (link >= 0 && link < VIRT_MEM_SIZE);
-}
-
-int mainloop_error_handler(int *cpu_state, int *memory)
-{   
-    char *err_msg;
-    switch (cpu_state[ERR_CODE])
-    {
-        case SIG_FAULT:
-            err_msg = "выход за границы памяти";
-            break;
-    }
-    if (cpu_state[ERR_CODE] != NO_ERR) {
-        if (cpu_state[INTERRUPTION] == INTERRAPTED) {
-            printf("pc=%d: команда %d, операнд=%d, ОШИБКА:=%s (повторное прерывание)\n", cpu_state[PC], cpu_state[IR], memory[cpu_state[PC] + PC_SHIFT], err_msg);
-            return 0;
-        }
-        cpu_state[INTERRUPTION] = INTERRAPTED;
-        printf(", ОШИБКА:=%s\n", err_msg);
-        cpu_state[PC] = cpu_state[LINK_TO_ERR_HANDLER];
-        return 1;
-    }
-    if (!shift_pc(cpu_state, memory)) return 0;
-    printf(", acc=%d\n", cpu_state[ACC]);  
-    return 1;
 }
