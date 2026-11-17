@@ -1,6 +1,4 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
 
 #define LIMIT_MEMORY_SIZE 256 // объём памяти, измеряющаяся в единиах размера массива С.
 #define ADDRESS_ERR_HANDLER_ADDRESS 0 // адрес адреса обработчка ошибок
@@ -14,65 +12,56 @@
 #define FUTURE_ADDON_STUB 0 // заглушка для неопределенных состояний CPU
 // некоторые текстовые литералы, использующиеся в логах
 #define REPEAT_INTARRUTION_MSG " (repeat interruption)" 
-#define EXIT_SUCCESS_MSG "Program is completed without error"
-#define EXIT_FAILURE_MSG "Program is completed with error"
+#define EXIT_SUCCESS_MSG "Program is completed without error\n"
+#define EXIT_FAILURE_MSG "Program is completed with error\n"
 
 // коды команд
-enum Opcode {
-    OP_HALT, // 0
-    OP_LOAD, // 1
-    OP_ADD, // 2
-    OP_SUB, // 3
-    OP_MUL, // 4
-    OP_DIV, // 5
-    OP_JUMP, // 6
-    OP_JUMP_IF_ZERO, // 7
 
-    OP__COUNT
-};
+#define OP_HALT 0
+#define OP_LOAD 1
+#define OP_ADD 2
+#define OP_SUB 3
+#define OP_MUL 4
+#define OP_DIV 5
+#define OP_JUMP 6
+#define OP_JUMP_IF_ZERO 7
+
+#define OP__COUNT 8
+
 // коды состояний CPU
-enum Cpu_state {
-    CS_PC,
-    CS_ACC,
-    CS_IR,
-    CS_LINK_TO_ERR_HANDLER,
-    CS_INTERRUPTION,
-    CS_ERR_CODE,
-    CS_FUTUTE_ADDON_0,
-    CS_FUTUTE_ADDON_1,
-};
+#define CS_PC 0
+#define CS_ACC 1
+#define CS_IR 2
+#define CS_LINK_TO_ERR_HANDLER 3
+#define CS_INTERRUPTION 4
+#define CS_ERR_CODE 5
+#define CS_FUTUTE_ADDON_0 6
+#define CS_FUTUTE_ADDON_1 7
+
 // коды состояний прерывания
-enum Interruption_state {
-    INTRS_IN_PROCESS,
-    INTRS_INTERRAPTED
-};
+#define INTRS_IN_PROCESS 0
+#define INTRS_INTERRAPTED 1
+
 // коды ошибок
-typedef enum Err_code {
-    E_NO,
-    E_INPUT,
-    E_CACHE_MISSING,
-    E_OP_SEG_FAULT,
-    E_PC_SEG_FAULT,
-    E_NO_COMMAND,
-    E_INVALID_COMMAND,
-    E_COMMAND_END_RANGE,
-    E_JUMP_SEG_FAULT,
-    E_DIVISION_ZERO,
-} err_t;
+#define E_NO 0
+#define E_INPUT 1
+#define E_CACHE_MISSING 2
+#define E_OP_SEG_FAULT 3
+#define E_PC_SEG_FAULT 4
+#define E_NO_COMMAND 5
+#define E_INVALID_COMMAND 6
+#define E_COMMAND_END_RANGE 7
+#define E_JUMP_SEG_FAULT 8
+#define E_DIVISION_ZERO 9
 
-typedef enum Boolean {
-    FALSE,
-    TRUE
-} bool;
-
-err_t load_memory(int *q_virt_memory_entries, int *memory);
-err_t init_cpu_state(int *cpu_state, int *memory, int q_virt_memory_entries);
-err_t shift_pc(int *pc, int *memory, int q_virt_memory_entries);
+int load_memory(int *q_virt_memory_entries, int *memory);
+int init_cpu_state(int *cpu_state, int *memory, int q_virt_memory_entries);
+int shift_pc(int *pc, int *memory, int q_virt_memory_entries);
 int _accessing_cp_data(int *cpu_state, int *memory);
 int _accessing_cp_address(int *cpu_state, int *memory);
-bool is_command(int content);
-bool is_address_valid(int address, int limit);
-err_t check_pc(int *pc, int *memory, int q_virt_memory_entries);
+int is_command(int content);
+int is_address_valid(int address, int limit);
+int check_pc(int *pc, int *memory, int q_virt_memory_entries);
 void exec_command(int *cpu_state, int *memory, int q_virt_memory_entries);
 void print_cpu_state(int *cpu_state, int *memory);
 void print_err(int *cpu_state, int *memory);
@@ -87,22 +76,22 @@ int main(void)
     int q_virt_memory_entries = LOAD_MEMORY_START_POINT_ADDRESS;
     cpu_state[CS_ERR_CODE] = load_memory(&q_virt_memory_entries, memory);
     if (cpu_state[CS_ERR_CODE] != E_NO) {
-        fprintf(stderr, "Initialization error:\n");
+        printf("Initialization error:\n");
         print_err(cpu_state, memory);
         goto exit_failure;
     }
-    puts("Memory loaded");
+    printf("Memory loaded\n");
     cpu_state[CS_ERR_CODE] = init_cpu_state(cpu_state, memory, q_virt_memory_entries);
     if (cpu_state[CS_ERR_CODE] != E_NO) {
-        fprintf(stderr, "Initialization error:\n");
+        printf("Initialization error:\n");
         print_err(cpu_state, memory);
         goto exit_failure;
     }
-    puts("CPU ready");
-    puts("Initialization successful");
+    printf("CPU ready\n");
+    printf("Initialization successful\n");
 
     // mainloop
-    puts("CPU state:");
+    printf("CPU state:\n");
     while (cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS) {
         cpu_state[CS_IR] = memory[cpu_state[CS_PC]];
         if (cpu_state[CS_IR] == OP_HALT) break;
@@ -115,8 +104,8 @@ int main(void)
 
     // Termination
     if (cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS) {
-        puts(EXIT_SUCCESS_MSG);
-        return EXIT_SUCCESS;
+        printf(EXIT_SUCCESS_MSG);
+        return 0;
     }
 
     // error handler action
@@ -125,18 +114,18 @@ int main(void)
     if (cpu_state[CS_ERR_CODE] != E_NO) {
             print_err(cpu_state, memory);
     } else {
-        puts("Error handler action:");
+        printf("Error handler action:\n");
         cpu_state[CS_IR] = memory[cpu_state[CS_PC]];
         if (cpu_state[CS_IR] == OP_HALT) {
-            puts("HALT");
+            printf("HALT\n");
             goto exit_failure;
         }
         exec_command(cpu_state, memory, q_virt_memory_entries);
     }
 
     exit_failure:
-    puts(EXIT_FAILURE_MSG);
-    return EXIT_FAILURE;
+    printf(EXIT_FAILURE_MSG);
+    return 1;
 }
 
 void print_cpu_state(int *cpu_state, int *memory) { // логирование состояния CPU
@@ -154,36 +143,36 @@ void print_cpu_state(int *cpu_state, int *memory) { // логирование с
 void print_err(int *cpu_state, int *memory) { // логирование ошибок
     switch (cpu_state[CS_ERR_CODE]){
         case E_JUMP_SEG_FAULT:
-            fprintf(stderr, "PC(%d) -> COMMAND(%d); PC+SHIFT(%d) -> JUMP_PC(%d). Error: JUMP segmentation fault%s\n", cpu_state[CS_PC], memory[cpu_state[CS_PC]], cpu_state[CS_PC]+PC_SHIFT, memory[cpu_state[CS_PC]+PC_SHIFT], cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : REPEAT_INTARRUTION_MSG );
+            printf("PC(%d) -> COMMAND(%d); PC+SHIFT(%d) -> JUMP_PC(%d). Error: JUMP segmentation fault%s\n", cpu_state[CS_PC], memory[cpu_state[CS_PC]], cpu_state[CS_PC]+PC_SHIFT, memory[cpu_state[CS_PC]+PC_SHIFT], cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : REPEAT_INTARRUTION_MSG );
             break;
         case E_PC_SEG_FAULT:
-            fprintf(stderr, "PC(%d). Error: PC segmentation fault%s\n", cpu_state[CS_PC], cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : REPEAT_INTARRUTION_MSG );
+            printf("PC(%d). Error: PC segmentation fault%s\n", cpu_state[CS_PC], cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : REPEAT_INTARRUTION_MSG );
             break;
         case E_NO_COMMAND:
-            fprintf(stderr, "Error: CPU not found any command%s\n", cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : REPEAT_INTARRUTION_MSG);
+            printf("Error: CPU not found any command%s\n", cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : REPEAT_INTARRUTION_MSG);
             break;
         case E_COMMAND_END_RANGE:
-            fprintf(stderr, "PC(%d) -> COMMAND(%d). Error: found command in the end of memory%s\n", cpu_state[CS_PC], memory[cpu_state[CS_PC]], cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : REPEAT_INTARRUTION_MSG);
+            printf("PC(%d) -> COMMAND(%d). Error: found command in the end of memory%s\n", cpu_state[CS_PC], memory[cpu_state[CS_PC]], cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : REPEAT_INTARRUTION_MSG);
             break;
         case E_OP_SEG_FAULT:
-            fprintf(stderr, "PC(%d) -> COMMAND(%d); PC+SHIFT(%d) -> OPERAND ADDRESS(%d). Error: operand segmentation fault%s\n", cpu_state[CS_PC], memory[cpu_state[CS_PC]], cpu_state[CS_PC] + PC_LOCAL_SHIFT, memory[cpu_state[CS_PC] + PC_LOCAL_SHIFT], cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : REPEAT_INTARRUTION_MSG);
+            printf("PC(%d) -> COMMAND(%d); PC+SHIFT(%d) -> OPERAND ADDRESS(%d). Error: operand segmentation fault%s\n", cpu_state[CS_PC], memory[cpu_state[CS_PC]], cpu_state[CS_PC] + PC_LOCAL_SHIFT, memory[cpu_state[CS_PC] + PC_LOCAL_SHIFT], cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : REPEAT_INTARRUTION_MSG);
             break;
         case E_INVALID_COMMAND:
-            fprintf(stderr, "PC(%d) -> COMMAND(%d). Error: PC pointing to invalid command%s\n", cpu_state[CS_PC], memory[cpu_state[CS_PC]], cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : REPEAT_INTARRUTION_MSG);
+            printf("PC(%d) -> COMMAND(%d). Error: PC pointing to invalid command%s\n", cpu_state[CS_PC], memory[cpu_state[CS_PC]], cpu_state[CS_INTERRUPTION] == INTRS_IN_PROCESS ? "" : REPEAT_INTARRUTION_MSG);
             break;
         case E_INPUT:
-            fprintf(stderr, "Input error\n");
+            printf("Input error\n");
             break;
         case E_CACHE_MISSING:
-            fprintf(stderr, "Input out of memory\n");
+            printf("Input out of memory\n");
             break;
         case E_DIVISION_ZERO:
-            fprintf(stderr, "PC(%d) -> COMMAND(%d); PC+SHIFT(%d) -> OPERATION_ADDRESS(%d) -> OPERAND(%d). Error: zero division\n", cpu_state[CS_PC], memory[cpu_state[CS_PC]], cpu_state[CS_PC] + PC_LOCAL_SHIFT, _accessing_cp_address(cpu_state, memory), _accessing_cp_data(cpu_state, memory));
+            printf("PC(%d) -> COMMAND(%d); PC+SHIFT(%d) -> OPERATION_ADDRESS(%d) -> OPERAND(%d). Error: zero division\n", cpu_state[CS_PC], memory[cpu_state[CS_PC]], cpu_state[CS_PC] + PC_LOCAL_SHIFT, _accessing_cp_address(cpu_state, memory), _accessing_cp_data(cpu_state, memory));
             break;
     }
 }
 
-err_t load_memory(int *q_virt_memory_entries, int *memory) { // заполнение памяти данными
+int load_memory(int *q_virt_memory_entries, int *memory) { // заполнение памяти данными
     int data;
     int scanf_rc;
     printf("Loading data into memory...\n");
@@ -202,9 +191,9 @@ err_t load_memory(int *q_virt_memory_entries, int *memory) { // заполнен
     return E_NO; // случай, когда данных пришло ровно столько столько выделено места
 }
 
-err_t init_cpu_state(int *cpu_state, int *memory, int q_virt_memory_entries) // инициализация CPU
+int init_cpu_state(int *cpu_state, int *memory, int q_virt_memory_entries) // инициализация CPU
 {
-    err_t rc;
+    int rc;
     cpu_state[CS_PC] = PC_INIT; // счётчик команд (pc)
     rc = shift_pc(&cpu_state[CS_PC], memory, q_virt_memory_entries);
     if (rc != E_NO) return rc;
@@ -267,12 +256,12 @@ void exec_command(int *cpu_state, int *memory, int q_virt_memory_entries) { // �
                 cpu_state[CS_PC] = _accessing_cp_address(cpu_state, memory);
                 cpu_state[CS_ERR_CODE] = check_pc(&cpu_state[CS_PC], memory, q_virt_memory_entries);
             } else {
-                puts("Condition jump skipped");
+                printf("Condition jump skipped");
                 cpu_state[CS_PC] += PC_SHIFT;
                 cpu_state[CS_ERR_CODE] = shift_pc(&cpu_state[CS_PC], memory, q_virt_memory_entries);
             }
             break;
-    }   
+    }
 }
 
 int _accessing_cp_data(int *cpu_state, int *memory) {
@@ -283,8 +272,8 @@ int _accessing_cp_address(int *cpu_state, int *memory) {
     return memory[cpu_state[CS_PC] + PC_LOCAL_SHIFT];
 }
 
-err_t shift_pc(int *pc, int *memory, int q_virt_memory_entries) // попытка переключения на следующую команду; pc: ожидается обновлённый pc, указывающий не на выполненную команду
-{   err_t rc;
+int shift_pc(int *pc, int *memory, int q_virt_memory_entries) // попытка переключения на следующую команду; pc: ожидается обновлённый pc, указывающий не на выполненную команду
+{   int rc;
     for (; *pc < q_virt_memory_entries; ++*pc) {
         rc = check_pc(pc, memory, q_virt_memory_entries);
         if (rc == E_NO) return E_NO;
@@ -294,15 +283,15 @@ err_t shift_pc(int *pc, int *memory, int q_virt_memory_entries) // попытк�
     return E_NO_COMMAND;
 }
 
-err_t check_pc(int *pc, int *memory, int q_virt_memory_entries) { // полная проверка PC
-    bool rc;
+int check_pc(int *pc, int *memory, int q_virt_memory_entries) { // полная проверка PC
+    int rc;
     rc = is_address_valid(*pc, q_virt_memory_entries);
-    if (rc != TRUE) return E_PC_SEG_FAULT;
+    if (rc != 1) return E_PC_SEG_FAULT;
     if (memory[*pc] == OP_HALT) return E_NO;
-    if (is_command(memory[*pc]) == TRUE) {
+    if (is_command(memory[*pc]) == 1) {
         if (*pc == q_virt_memory_entries - 1) return E_COMMAND_END_RANGE;
         rc = is_address_valid(memory[*pc + PC_LOCAL_SHIFT], q_virt_memory_entries);
-        if (rc != TRUE) {
+        if (rc != 1) {
             switch (memory[*pc]) {
                 case OP_JUMP:
                 case OP_JUMP_IF_ZERO:
@@ -315,13 +304,13 @@ err_t check_pc(int *pc, int *memory, int q_virt_memory_entries) { // полна�
     return E_INVALID_COMMAND;
 }
 
-bool is_command(int content) {
+int is_command(int content) {
     for (int i = 0; i < OP__COUNT; ++i) {
-        if (i == content) return TRUE;
+        if (i == content) return 1;
     }
-    return FALSE;
+    return 0;
 }
 
-bool is_address_valid(int address, int limit) {
-    return (address < LOAD_MEMORY_START_POINT_ADDRESS || address >= limit) ? FALSE : TRUE;
+int is_address_valid(int address, int limit) {
+    return (address < LOAD_MEMORY_START_POINT_ADDRESS || address >= limit) ? 0 : 1;
 }
